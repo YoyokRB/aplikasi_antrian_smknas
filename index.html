@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplikasi Antrian Pembayaran - SMK Nasional Malang</title>
+    <title>Aplikasi Antrian Online - SMK Nasional Malang</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter for a clean look -->
@@ -11,18 +11,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
-        /* Use Inter font family */
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Simple animation for number changes */
-        .number-pop {
-            animation: pop 0.3s ease-out;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .number-pop { animation: pop 0.3s ease-out; }
         @keyframes pop {
             0% { transform: scale(0.8); opacity: 0; }
             80% { transform: scale(1.1); }
             100% { transform: scale(1); opacity: 1; }
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -34,7 +32,7 @@
         <!-- Header Section -->
         <header class="mb-6">
             <h1 class="text-2xl md:text-3xl font-bold text-gray-800">SMK Nasional Malang</h1>
-            <p class="text-gray-500 mt-1">Sistem Antrian Pembayaran</p>
+            <p class="text-gray-500 mt-1">Sistem Antrian Pembayaran Online</p>
         </header>
 
         <!-- Current Number Display -->
@@ -75,9 +73,9 @@
             </div>
         </div>
         
-        <!-- User ID Display for collaboration -->
+        <!-- Status Display -->
         <div class="mt-6 text-xs text-gray-400">
-            <p>ID Sesi Anda: <span id="user-id-display">...</span></p>
+            <p>Status: <span id="status-display" class="font-bold">Menghubungkan...</span></p>
         </div>
 
     </div>
@@ -94,17 +92,11 @@
         </div>
     </div>
 
-    <!-- Error Message Display -->
-    <div id="error-message" class="hidden fixed bottom-4 right-4 bg-red-600 text-white py-2 px-4 rounded-lg shadow-lg z-50">
-        <!-- Error text will be inserted here -->
-    </div>
-
-
     <!-- Firebase and Application Logic -->
     <script type="module">
         // Import necessary Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- DOM ELEMENT REFERENCES ---
@@ -117,206 +109,136 @@
         const resetModal = document.getElementById('reset-modal');
         const confirmResetBtn = document.getElementById('confirm-reset-btn');
         const cancelResetBtn = document.getElementById('cancel-reset-btn');
-        const userIdDisplay = document.getElementById('user-id-display');
-        const errorMessageDiv = document.getElementById('error-message');
+        const statusDisplay = document.getElementById('status-display');
 
+        // --- PASTE FIREBASE CONFIG HERE ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyBg6Jx2CdPY5VgeiqNMFx2qx-mSY_OLqYc",
+          authDomain: "antrian-70285.firebaseapp.com",
+          projectId: "antrian-70285",
+          storageBucket: "antrian-70285.firebasestorage.app",
+          messagingSenderId: "177691320203",
+          appId: "1:177691320203:web:5096ab6fe177f0e313198e",
+          measurementId: "G-HYE1WCETMK"
+            };
+        // ------------------------------------
 
-        // --- STATE VARIABLES ---
-        let currentNumber = 0;
-        let lastNumber = 0;
-        let isAuthReady = false;
-        let previousCurrentNumber = -1; // Used to detect when a number is called
-        let indonesianFemaleVoice = null; // Variable to hold the desired voice
-        
-        // --- FIREBASE SETUP ---
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'smk-nasional-malang-queue';
-        
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        
-        const queueDocRef = doc(db, `artifacts/${appId}/public/data/queue`, "liveState");
-
-        // --- UTILITY FUNCTIONS ---
-        function showError(message) {
-            if (errorMessageDiv) {
-                errorMessageDiv.textContent = message;
-                errorMessageDiv.classList.remove('hidden');
-                setTimeout(() => {
-                    errorMessageDiv.classList.add('hidden');
-                }, 5000);
-            }
-        }
-
-        // --- VOICE LOADING & SETUP ---
-        function loadAndSetVoice() {
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length === 0) {
-                return; // Voices not loaded yet
+        // --- MAIN LOGIC ---
+        function main() {
+            // Check if configuration is still a placeholder
+            if (!firebaseConfig || firebaseConfig.apiKey.startsWith("GANTI_DENGAN")) {
+                statusDisplay.textContent = "Error: Konfigurasi Firebase belum dimasukkan!";
+                console.error("Konfigurasi Firebase belum diganti. Harap salin konfigurasi Anda dari Firebase Console ke dalam objek firebaseConfig di file index.html.");
+                return; // Stop execution if config is missing
             }
 
-            const indonesianVoices = voices.filter(voice => voice.lang === 'id-ID');
+            try {
+                // Initialize Firebase
+                const app = initializeApp(firebaseConfig);
+                const db = getFirestore(app);
+                const auth = getAuth(app);
+                
+                // Construct a unique path for the queue data
+                const appId = firebaseConfig.projectId || 'smknas-antrian';
+                const queueDocRef = doc(db, `antrian-pembayaran/${appId}/live/state`);
 
-            // Prioritized search for a female voice
-            // 1. Look for names containing "Female" or "Wanita"
-            indonesianFemaleVoice = indonesianVoices.find(voice => 
-                voice.name.toLowerCase().includes('female') || voice.name.toLowerCase().includes('wanita')
-            );
+                // State variables
+                let currentNumber = 0;
+                let lastNumber = 0;
+                let isAuthReady = false;
+                let previousCurrentNumber = -1;
+                let indonesianFemaleVoice = null;
 
-            // 2. If not found, look for Google's voice, which is typically female
-            if (!indonesianFemaleVoice) {
-                indonesianFemaleVoice = indonesianVoices.find(voice => voice.name.includes('Google'));
-            }
-
-            // 3. If still not found, fall back to the first available Indonesian voice
-            if (!indonesianFemaleVoice && indonesianVoices.length > 0) {
-                indonesianFemaleVoice = indonesianVoices[0];
-            }
-        }
-
-        // Load voices as soon as they are available in the browser.
-        if ('speechSynthesis' in window) {
-            // The 'voiceschanged' event is the most reliable way to get the list of voices.
-            window.speechSynthesis.onvoiceschanged = loadAndSetVoice;
-            loadAndSetVoice(); // Also call it directly in case the event has already fired.
-        }
-
-        // --- SPEECH SYNTHESIS FUNCTION ---
-        function speakText(text, rate = 0.9) {
-            if (!('speechSynthesis' in window)) {
-                console.warn("Browser tidak mendukung Text-to-Speech.");
-                return;
-            }
-            
-            // Stop any currently playing speech to avoid overlap
-            window.speechSynthesis.cancel();
-            
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'id-ID';
-            utterance.rate = rate;
-
-            // Assign the pre-loaded female voice if it was found
-            if (indonesianFemaleVoice) {
-                utterance.voice = indonesianFemaleVoice;
-            } else {
-                console.warn("Suara wanita Indonesia tidak ditemukan, menggunakan suara default.");
-            }
-
-            window.speechSynthesis.speak(utterance);
-        }
-
-        // --- AUTHENTICATION ---
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                userIdDisplay.textContent = user.uid;
-                isAuthReady = true;
-                initializeQueueListener();
-            } else {
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (error) {
-                    // This error is expected in some environments. Log it calmly and fall back.
-                    console.log("Custom token auth failed, falling back to anonymous sign-in. This is normal.");
+                // Voice setup
+                function loadAndSetVoice() {
                     try {
-                        await signInAnonymously(auth);
-                    } catch (anonError) {
-                         console.error("Fallback anonymous sign-in also failed:", anonError);
-                         showError("Gagal menghubungkan ke server. Silakan muat ulang halaman.");
+                        const voices = window.speechSynthesis.getVoices();
+                        if (voices.length === 0) return;
+                        const indonesianVoices = voices.filter(voice => voice.lang === 'id-ID');
+                        indonesianFemaleVoice = indonesianVoices.find(voice => voice.name.toLowerCase().includes('female') || voice.name.toLowerCase().includes('wanita')) || indonesianVoices.find(voice => voice.name.includes('Google')) || indonesianVoices[0];
+                    } catch (e) { console.error("Gagal memuat suara:", e); }
+                }
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.onvoiceschanged = loadAndSetVoice;
+                    loadAndSetVoice();
+                }
+
+                function speakText(text, rate = 0.9) {
+                    if (!('speechSynthesis' in window)) return;
+                    window.speechSynthesis.cancel();
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'id-ID';
+                    utterance.rate = rate;
+                    if (indonesianFemaleVoice) utterance.voice = indonesianFemaleVoice;
+                    window.speechSynthesis.speak(utterance);
+                }
+
+                // UI update function
+                function updateUI() {
+                    currentNumberDisplay.textContent = currentNumber;
+                    lastNumberDisplay.textContent = lastNumber;
+                    waitingDisplay.textContent = Math.max(0, lastNumber - currentNumber);
+                    nextNumberBtn.disabled = currentNumber >= lastNumber;
+                }
+
+                // Firestore listener
+                function initializeQueueListener() {
+                    if (!isAuthReady) return;
+                    onSnapshot(queueDocRef, (doc) => {
+                        if (doc.exists()) {
+                            const data = doc.data();
+                            currentNumber = data.currentNumber || 0;
+                            lastNumber = data.lastNumber || 0;
+                        } else {
+                            console.log("Membuat data antrian baru di server.");
+                            setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0 });
+                        }
+                        if (previousCurrentNumber !== -1 && currentNumber > previousCurrentNumber) {
+                            speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket pembayaran`);
+                        }
+                        previousCurrentNumber = currentNumber;
+                        updateUI();
+                    }, (error) => {
+                        console.error("Gagal mengambil data dari server:", error);
+                        statusDisplay.textContent = 'Error koneksi data.';
+                    });
+                }
+
+                // Authentication
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        statusDisplay.textContent = 'Terhubung';
+                        isAuthReady = true;
+                        initializeQueueListener();
                     }
-                }
-            }
-        });
+                });
+                signInAnonymously(auth).catch(error => {
+                    console.error("Gagal login anonim:", error);
+                    statusDisplay.textContent = 'Gagal terhubung. Periksa API Key.';
+                });
 
-
-        // --- CORE LOGIC: REAL-TIME LISTENER ---
-        function initializeQueueListener() {
-            if (!isAuthReady) return;
-            
-            onSnapshot(queueDocRef, (doc) => {
-                let docData;
-                if (doc.exists()) {
-                    docData = doc.data();
-                    currentNumber = docData.currentNumber || 0;
-                    lastNumber = docData.lastNumber || 0;
-                } else {
-                    console.log("No queue data found. Initializing new queue.");
-                    setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0 });
-                    currentNumber = 0;
-                    lastNumber = 0;
-                }
-
-                // --- Announce Number Change ---
-                if (previousCurrentNumber !== -1 && currentNumber > previousCurrentNumber) {
-                    // Combine into a single call for a smoother, faster flow
-                    speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket pembayaran`);
-                }
-                previousCurrentNumber = currentNumber; // Update the previous number state
-
-                updateUI();
-            }, (error) => {
-                console.error("Error listening to queue updates: ", error);
-            });
-        }
-
-
-        // --- UI UPDATE FUNCTION ---
-        function updateUI() {
-            currentNumberDisplay.classList.remove('number-pop');
-            void currentNumberDisplay.offsetWidth;
-            currentNumberDisplay.classList.add('number-pop');
-
-            currentNumberDisplay.textContent = currentNumber;
-            lastNumberDisplay.textContent = lastNumber;
-            const waitingCount = lastNumber - currentNumber;
-            waitingDisplay.textContent = waitingCount > 0 ? waitingCount : 0;
-
-            nextNumberBtn.disabled = currentNumber >= lastNumber;
-            if (nextNumberBtn.disabled) {
-                nextNumberBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            } else {
-                nextNumberBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                // Event Listeners
+                getNumberBtn.addEventListener('click', () => {
+                    if (isAuthReady) updateDoc(queueDocRef, { lastNumber: increment(1) });
+                });
+                nextNumberBtn.addEventListener('click', () => {
+                    if (isAuthReady && currentNumber < lastNumber) updateDoc(queueDocRef, { currentNumber: increment(1) });
+                });
+                resetBtn.addEventListener('click', () => resetModal.classList.remove('hidden'));
+                cancelResetBtn.addEventListener('click', () => resetModal.classList.add('hidden'));
+                confirmResetBtn.addEventListener('click', () => {
+                    if (isAuthReady) setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0 });
+                    resetModal.classList.add('hidden');
+                });
+                
+            } catch(e) {
+                console.error("Gagal menginisialisasi Firebase:", e);
+                statusDisplay.textContent = "Error: Konfigurasi Firebase tidak valid.";
             }
         }
         
-        // --- EVENT LISTENERS ---
-
-        getNumberBtn.addEventListener('click', () => {
-             if (!isAuthReady) return;
-            updateDoc(queueDocRef, {
-                lastNumber: increment(1)
-            }).catch(error => console.error("Error getting new number:", error));
-        });
-
-        nextNumberBtn.addEventListener('click', () => {
-             if (!isAuthReady) return;
-            if (currentNumber < lastNumber) {
-                updateDoc(queueDocRef, {
-                    currentNumber: increment(1)
-                }).catch(error => console.error("Error calling next number:", error));
-            }
-        });
-
-        resetBtn.addEventListener('click', () => {
-            resetModal.classList.remove('hidden');
-        });
-
-        cancelResetBtn.addEventListener('click', () => {
-            resetModal.classList.add('hidden');
-        });
-
-        confirmResetBtn.addEventListener('click', () => {
-             if (!isAuthReady) return;
-            setDoc(queueDocRef, {
-                currentNumber: 0,
-                lastNumber: 0
-            }).catch(error => console.error("Error resetting queue:", error));
-            resetModal.classList.add('hidden');
-        });
+        // Run the application
+        main();
 
     </script>
 </body>
