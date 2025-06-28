@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplikasi Antrian Online - SMK Nasional Malang</title>
+    <title>Aplikasi Antrian Multi-Loket - SMK Nasional Malang</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter for a clean look -->
@@ -37,8 +37,16 @@
 
         <!-- Current Number Display -->
         <div class="bg-blue-600 text-white rounded-xl p-6 mb-6">
-            <p class="text-lg uppercase tracking-wider font-semibold">Nomor Antrian</p>
-            <div id="current-number-display" class="text-7xl md:text-8xl font-black my-2">0</div>
+            <p class="text-lg uppercase tracking-wider font-semibold">NOMOR ANTRIAN</p>
+            <div id="main-display" class="flex items-center justify-center space-x-4">
+                <div id="current-number-display" class="text-7xl md:text-8xl font-black">0</div>
+                <div id="loket-display-container" class="text-center hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-arrow-right-circle-fill mx-auto" viewBox="0 0 16 16">
+                      <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM4.5 7.5a.5.5 0 0 0 0 1h5.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L10.293 7.5H4.5z"/>
+                    </svg>
+                    <div class="font-bold text-xl mt-1">LOKET <span id="loket-number-display"></span></div>
+                </div>
+            </div>
         </div>
 
         <!-- Queue Information -->
@@ -63,14 +71,12 @@
         <!-- Teller/Admin Actions -->
         <div class="border-t pt-6">
             <p class="text-sm text-gray-400 mb-3">Untuk Petugas</p>
-            <div class="flex space-x-4">
-                <button id="next-number-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg">
-                    Panggil Berikutnya
-                </button>
-                <button id="reset-btn" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg">
-                    Reset
-                </button>
+            <div class="grid grid-cols-3 gap-2">
+                <button id="panggil-loket-1" data-loket="1" class="panggil-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-2 rounded-lg transition-all duration-300 shadow-md">Loket 1</button>
+                <button id="panggil-loket-2" data-loket="2" class="panggil-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-2 rounded-lg transition-all duration-300 shadow-md">Loket 2</button>
+                <button id="panggil-loket-3" data-loket="3" class="panggil-btn w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-2 rounded-lg transition-all duration-300 shadow-md">Loket 3</button>
             </div>
+            <button id="reset-btn" class="w-full mt-4 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-md">Reset Semua</button>
         </div>
         
         <!-- Status Display -->
@@ -101,10 +107,12 @@
 
         // --- DOM ELEMENT REFERENCES ---
         const currentNumberDisplay = document.getElementById('current-number-display');
+        const loketDisplayContainer = document.getElementById('loket-display-container');
+        const loketNumberDisplay = document.getElementById('loket-number-display');
         const lastNumberDisplay = document.getElementById('last-number-display');
         const waitingDisplay = document.getElementById('waiting-display');
         const getNumberBtn = document.getElementById('get-number-btn');
-        const nextNumberBtn = document.getElementById('next-number-btn');
+        const panggilButtons = document.querySelectorAll('.panggil-btn');
         const resetBtn = document.getElementById('reset-btn');
         const resetModal = document.getElementById('reset-modal');
         const confirmResetBtn = document.getElementById('confirm-reset-btn');
@@ -112,6 +120,7 @@
         const statusDisplay = document.getElementById('status-display');
 
         // --- PASTE FIREBASE CONFIG HERE ---
+        // PENTING: Ganti seluruh blok kode di bawah ini dengan yang Anda salin dari Firebase Console
         const firebaseConfig = {
           apiKey: "AIzaSyBg6Jx2CdPY5VgeiqNMFx2qx-mSY_OLqYc",
           authDomain: "antrian-70285.firebaseapp.com",
@@ -125,31 +134,21 @@
 
         // --- MAIN LOGIC ---
         function main() {
-            // Check if configuration is still a placeholder
             if (!firebaseConfig || firebaseConfig.apiKey.startsWith("GANTI_DENGAN")) {
                 statusDisplay.textContent = "Error: Konfigurasi Firebase belum dimasukkan!";
-                console.error("Konfigurasi Firebase belum diganti. Harap salin konfigurasi Anda dari Firebase Console ke dalam objek firebaseConfig di file index.html.");
-                return; // Stop execution if config is missing
+                return;
             }
 
             try {
-                // Initialize Firebase
                 const app = initializeApp(firebaseConfig);
                 const db = getFirestore(app);
                 const auth = getAuth(app);
-                
-                // Construct a unique path for the queue data
                 const appId = firebaseConfig.projectId || 'smknas-antrian';
                 const queueDocRef = doc(db, `antrian-pembayaran/${appId}/live/state`);
 
-                // State variables
-                let currentNumber = 0;
-                let lastNumber = 0;
-                let isAuthReady = false;
-                let previousCurrentNumber = -1;
-                let indonesianFemaleVoice = null;
+                let currentNumber = 0, lastNumber = 0, servingLoket = 0, isAuthReady = false, indonesianFemaleVoice = null;
+                let previousCall = null;
 
-                // Voice setup
                 function loadAndSetVoice() {
                     try {
                         const voices = window.speechSynthesis.getVoices();
@@ -158,30 +157,39 @@
                         indonesianFemaleVoice = indonesianVoices.find(voice => voice.name.toLowerCase().includes('female') || voice.name.toLowerCase().includes('wanita')) || indonesianVoices.find(voice => voice.name.includes('Google')) || indonesianVoices[0];
                     } catch (e) { console.error("Gagal memuat suara:", e); }
                 }
+
                 if ('speechSynthesis' in window) {
                     window.speechSynthesis.onvoiceschanged = loadAndSetVoice;
                     loadAndSetVoice();
                 }
 
-                function speakText(text, rate = 0.9) {
+                function speakText(text) {
                     if (!('speechSynthesis' in window)) return;
                     window.speechSynthesis.cancel();
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = 'id-ID';
-                    utterance.rate = rate;
+                    utterance.rate = 0.9;
                     if (indonesianFemaleVoice) utterance.voice = indonesianFemaleVoice;
                     window.speechSynthesis.speak(utterance);
                 }
 
-                // UI update function
                 function updateUI() {
                     currentNumberDisplay.textContent = currentNumber;
                     lastNumberDisplay.textContent = lastNumber;
                     waitingDisplay.textContent = Math.max(0, lastNumber - currentNumber);
-                    nextNumberBtn.disabled = currentNumber >= lastNumber;
+
+                    if(servingLoket > 0 && currentNumber > 0){
+                        loketNumberDisplay.textContent = servingLoket;
+                        loketDisplayContainer.classList.remove('hidden');
+                    } else {
+                        loketDisplayContainer.classList.add('hidden');
+                    }
+
+                    panggilButtons.forEach(btn => {
+                        btn.disabled = currentNumber >= lastNumber;
+                    });
                 }
 
-                // Firestore listener
                 function initializeQueueListener() {
                     if (!isAuthReady) return;
                     onSnapshot(queueDocRef, (doc) => {
@@ -189,14 +197,17 @@
                             const data = doc.data();
                             currentNumber = data.currentNumber || 0;
                             lastNumber = data.lastNumber || 0;
+                            servingLoket = data.servingLoket || 0;
+                            const newCall = `${currentNumber}-${servingLoket}`;
+
+                            if (previousCall !== null && previousCall !== newCall && currentNumber > 0) {
+                                speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket ${servingLoket}`);
+                            }
+                            previousCall = newCall;
                         } else {
                             console.log("Membuat data antrian baru di server.");
-                            setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0 });
+                            setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0, servingLoket: 0 });
                         }
-                        if (previousCurrentNumber !== -1 && currentNumber > previousCurrentNumber) {
-                            speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket pembayaran`);
-                        }
-                        previousCurrentNumber = currentNumber;
                         updateUI();
                     }, (error) => {
                         console.error("Gagal mengambil data dari server:", error);
@@ -204,7 +215,6 @@
                     });
                 }
 
-                // Authentication
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         statusDisplay.textContent = 'Terhubung';
@@ -217,17 +227,26 @@
                     statusDisplay.textContent = 'Gagal terhubung. Periksa API Key.';
                 });
 
-                // Event Listeners
                 getNumberBtn.addEventListener('click', () => {
                     if (isAuthReady) updateDoc(queueDocRef, { lastNumber: increment(1) });
                 });
-                nextNumberBtn.addEventListener('click', () => {
-                    if (isAuthReady && currentNumber < lastNumber) updateDoc(queueDocRef, { currentNumber: increment(1) });
+
+                panggilButtons.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        if (isAuthReady && currentNumber < lastNumber) {
+                            const loket = btn.dataset.loket;
+                            updateDoc(queueDocRef, { 
+                                currentNumber: increment(1),
+                                servingLoket: parseInt(loket) 
+                            });
+                        }
+                    });
                 });
+
                 resetBtn.addEventListener('click', () => resetModal.classList.remove('hidden'));
                 cancelResetBtn.addEventListener('click', () => resetModal.classList.add('hidden'));
                 confirmResetBtn.addEventListener('click', () => {
-                    if (isAuthReady) setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0 });
+                    if (isAuthReady) setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0, servingLoket: 0 });
                     resetModal.classList.add('hidden');
                 });
                 
@@ -237,7 +256,6 @@
             }
         }
         
-        // Run the application
         main();
 
     </script>
