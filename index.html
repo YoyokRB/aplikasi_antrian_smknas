@@ -10,6 +10,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Tone.js for sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .number-pop { animation: pop 0.3s ease-out; }
@@ -120,7 +122,7 @@
         const statusDisplay = document.getElementById('status-display');
 
         // --- PASTE FIREBASE CONFIG HERE ---
-        // PENTING: Ganti seluruh blok kode di bawah ini dengan yang Anda salin dari Firebase Console
+        // PENTING: Pastikan blok kode di bawah ini sudah berisi konfigurasi asli dari Firebase Console Anda
         const firebaseConfig = {
           apiKey: "AIzaSyBg6Jx2CdPY5VgeiqNMFx2qx-mSY_OLqYc",
           authDomain: "antrian-70285.firebaseapp.com",
@@ -129,14 +131,14 @@
           messagingSenderId: "177691320203",
           appId: "1:177691320203:web:5096ab6fe177f0e313198e",
           measurementId: "G-HYE1WCETMK"
-            };
+        };
         // ------------------------------------
 
         // --- MAIN LOGIC ---
         function main() {
             if (!firebaseConfig || firebaseConfig.apiKey.startsWith("GANTI_DENGAN")) {
                 statusDisplay.textContent = "Error: Konfigurasi Firebase belum dimasukkan!";
-                return;
+                return; 
             }
 
             try {
@@ -148,6 +150,17 @@
 
                 let currentNumber = 0, lastNumber = 0, servingLoket = 0, isAuthReady = false, indonesianFemaleVoice = null;
                 let previousCall = null;
+
+                // Create a synthesizer for the chime sound
+                const chime = new Tone.Synth().toDestination();
+
+                function playChime() {
+                    Tone.start(); // Ensure audio context is running
+                    const now = Tone.now();
+                    // Play two notes for a "ting-tong" effect
+                    chime.triggerAttackRelease("G5", "8n", now);
+                    chime.triggerAttackRelease("E5", "8n", now + 0.4);
+                }
 
                 function loadAndSetVoice() {
                     try {
@@ -201,16 +214,18 @@
                             const newCall = `${currentNumber}-${servingLoket}`;
 
                             if (previousCall !== null && previousCall !== newCall && currentNumber > 0) {
-                                speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket ${servingLoket}`);
+                                // Play chime, then speak after a short delay
+                                playChime();
+                                setTimeout(() => {
+                                    speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket ${servingLoket}`);
+                                }, 1000); // 1-second delay
                             }
                             previousCall = newCall;
                         } else {
-                            console.log("Membuat data antrian baru di server.");
                             setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0, servingLoket: 0 });
                         }
                         updateUI();
                     }, (error) => {
-                        console.error("Gagal mengambil data dari server:", error);
                         statusDisplay.textContent = 'Error koneksi data.';
                     });
                 }
@@ -223,7 +238,6 @@
                     }
                 });
                 signInAnonymously(auth).catch(error => {
-                    console.error("Gagal login anonim:", error);
                     statusDisplay.textContent = 'Gagal terhubung. Periksa API Key.';
                 });
 
@@ -251,7 +265,6 @@
                 });
                 
             } catch(e) {
-                console.error("Gagal menginisialisasi Firebase:", e);
                 statusDisplay.textContent = "Error: Konfigurasi Firebase tidak valid.";
             }
         }
