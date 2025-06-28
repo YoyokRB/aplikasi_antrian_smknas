@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Antrian Pembayaran - SMK Nasional Malang</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter for a clean look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* Use Inter font family */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple animation for number changes */
+        .number-pop {
+            animation: pop 0.3s ease-out;
+        }
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            80% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Main application container -->
+    <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 text-center">
+
+        <!-- Header Section -->
+        <header class="mb-6">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">SMK Nasional Malang</h1>
+            <p class="text-gray-500 mt-1">Sistem Antrian Pembayaran</p>
+        </header>
+
+        <!-- Current Number Display -->
+        <div class="bg-blue-600 text-white rounded-xl p-6 mb-6">
+            <p class="text-lg uppercase tracking-wider font-semibold">Nomor Antrian</p>
+            <div id="current-number-display" class="text-7xl md:text-8xl font-black my-2">0</div>
+        </div>
+
+        <!-- Queue Information -->
+        <div class="grid grid-cols-2 gap-4 mb-8 text-lg">
+            <div class="bg-gray-100 p-4 rounded-lg">
+                <p class="text-gray-500 font-medium">Total Antrian</p>
+                <p id="last-number-display" class="text-3xl font-bold text-gray-800">0</p>
+            </div>
+            <div class="bg-gray-100 p-4 rounded-lg">
+                <p class="text-gray-500 font-medium">Sisa Antrian</p>
+                <p id="waiting-display" class="text-3xl font-bold text-gray-800">0</p>
+            </div>
+        </div>
+
+        <!-- User/Student Actions -->
+        <div class="mb-6">
+            <button id="get-number-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-all duration-300 shadow-md hover:shadow-lg">
+                Ambil Nomor Antrian
+            </button>
+        </div>
+
+        <!-- Teller/Admin Actions -->
+        <div class="border-t pt-6">
+            <p class="text-sm text-gray-400 mb-3">Untuk Petugas</p>
+            <div class="flex space-x-4">
+                <button id="next-number-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg">
+                    Panggil Berikutnya
+                </button>
+                <button id="reset-btn" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg">
+                    Reset
+                </button>
+            </div>
+        </div>
+        
+        <!-- User ID Display for collaboration -->
+        <div class="mt-6 text-xs text-gray-400">
+            <p>ID Sesi Anda: <span id="user-id-display">...</span></p>
+        </div>
+
+    </div>
+
+    <!-- Reset Confirmation Modal -->
+    <div id="reset-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl text-center">
+            <h3 class="text-xl font-bold mb-4">Konfirmasi Reset</h3>
+            <p class="text-gray-600 mb-6">Apakah Anda yakin ingin mereset semua nomor antrian ke 0?</p>
+            <div class="flex justify-center space-x-4">
+                <button id="confirm-reset-btn" class="bg-red-600 text-white px-6 py-2 rounded-lg">Ya, Reset</button>
+                <button id="cancel-reset-btn" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Message Display -->
+    <div id="error-message" class="hidden fixed bottom-4 right-4 bg-red-600 text-white py-2 px-4 rounded-lg shadow-lg z-50">
+        <!-- Error text will be inserted here -->
+    </div>
+
+
+    <!-- Firebase and Application Logic -->
+    <script type="module">
+        // Import necessary Firebase functions
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- DOM ELEMENT REFERENCES ---
+        const currentNumberDisplay = document.getElementById('current-number-display');
+        const lastNumberDisplay = document.getElementById('last-number-display');
+        const waitingDisplay = document.getElementById('waiting-display');
+        const getNumberBtn = document.getElementById('get-number-btn');
+        const nextNumberBtn = document.getElementById('next-number-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const resetModal = document.getElementById('reset-modal');
+        const confirmResetBtn = document.getElementById('confirm-reset-btn');
+        const cancelResetBtn = document.getElementById('cancel-reset-btn');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const errorMessageDiv = document.getElementById('error-message');
+
+
+        // --- STATE VARIABLES ---
+        let currentNumber = 0;
+        let lastNumber = 0;
+        let isAuthReady = false;
+        let previousCurrentNumber = -1; // Used to detect when a number is called
+        let indonesianFemaleVoice = null; // Variable to hold the desired voice
+        
+        // --- FIREBASE SETUP ---
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'smk-nasional-malang-queue';
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        const queueDocRef = doc(db, `artifacts/${appId}/public/data/queue`, "liveState");
+
+        // --- UTILITY FUNCTIONS ---
+        function showError(message) {
+            if (errorMessageDiv) {
+                errorMessageDiv.textContent = message;
+                errorMessageDiv.classList.remove('hidden');
+                setTimeout(() => {
+                    errorMessageDiv.classList.add('hidden');
+                }, 5000);
+            }
+        }
+
+        // --- VOICE LOADING & SETUP ---
+        function loadAndSetVoice() {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length === 0) {
+                return; // Voices not loaded yet
+            }
+
+            const indonesianVoices = voices.filter(voice => voice.lang === 'id-ID');
+
+            // Prioritized search for a female voice
+            // 1. Look for names containing "Female" or "Wanita"
+            indonesianFemaleVoice = indonesianVoices.find(voice => 
+                voice.name.toLowerCase().includes('female') || voice.name.toLowerCase().includes('wanita')
+            );
+
+            // 2. If not found, look for Google's voice, which is typically female
+            if (!indonesianFemaleVoice) {
+                indonesianFemaleVoice = indonesianVoices.find(voice => voice.name.includes('Google'));
+            }
+
+            // 3. If still not found, fall back to the first available Indonesian voice
+            if (!indonesianFemaleVoice && indonesianVoices.length > 0) {
+                indonesianFemaleVoice = indonesianVoices[0];
+            }
+        }
+
+        // Load voices as soon as they are available in the browser.
+        if ('speechSynthesis' in window) {
+            // The 'voiceschanged' event is the most reliable way to get the list of voices.
+            window.speechSynthesis.onvoiceschanged = loadAndSetVoice;
+            loadAndSetVoice(); // Also call it directly in case the event has already fired.
+        }
+
+        // --- SPEECH SYNTHESIS FUNCTION ---
+        function speakText(text, rate = 0.9) {
+            if (!('speechSynthesis' in window)) {
+                console.warn("Browser tidak mendukung Text-to-Speech.");
+                return;
+            }
+            
+            // Stop any currently playing speech to avoid overlap
+            window.speechSynthesis.cancel();
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'id-ID';
+            utterance.rate = rate;
+
+            // Assign the pre-loaded female voice if it was found
+            if (indonesianFemaleVoice) {
+                utterance.voice = indonesianFemaleVoice;
+            } else {
+                console.warn("Suara wanita Indonesia tidak ditemukan, menggunakan suara default.");
+            }
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userIdDisplay.textContent = user.uid;
+                isAuthReady = true;
+                initializeQueueListener();
+            } else {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    // This error is expected in some environments. Log it calmly and fall back.
+                    console.log("Custom token auth failed, falling back to anonymous sign-in. This is normal.");
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (anonError) {
+                         console.error("Fallback anonymous sign-in also failed:", anonError);
+                         showError("Gagal menghubungkan ke server. Silakan muat ulang halaman.");
+                    }
+                }
+            }
+        });
+
+
+        // --- CORE LOGIC: REAL-TIME LISTENER ---
+        function initializeQueueListener() {
+            if (!isAuthReady) return;
+            
+            onSnapshot(queueDocRef, (doc) => {
+                let docData;
+                if (doc.exists()) {
+                    docData = doc.data();
+                    currentNumber = docData.currentNumber || 0;
+                    lastNumber = docData.lastNumber || 0;
+                } else {
+                    console.log("No queue data found. Initializing new queue.");
+                    setDoc(queueDocRef, { currentNumber: 0, lastNumber: 0 });
+                    currentNumber = 0;
+                    lastNumber = 0;
+                }
+
+                // --- Announce Number Change ---
+                if (previousCurrentNumber !== -1 && currentNumber > previousCurrentNumber) {
+                    // Combine into a single call for a smoother, faster flow
+                    speakText(`Antrian selanjutnya, nomor ${currentNumber}, silakan menuju ke loket pembayaran`);
+                }
+                previousCurrentNumber = currentNumber; // Update the previous number state
+
+                updateUI();
+            }, (error) => {
+                console.error("Error listening to queue updates: ", error);
+            });
+        }
+
+
+        // --- UI UPDATE FUNCTION ---
+        function updateUI() {
+            currentNumberDisplay.classList.remove('number-pop');
+            void currentNumberDisplay.offsetWidth;
+            currentNumberDisplay.classList.add('number-pop');
+
+            currentNumberDisplay.textContent = currentNumber;
+            lastNumberDisplay.textContent = lastNumber;
+            const waitingCount = lastNumber - currentNumber;
+            waitingDisplay.textContent = waitingCount > 0 ? waitingCount : 0;
+
+            nextNumberBtn.disabled = currentNumber >= lastNumber;
+            if (nextNumberBtn.disabled) {
+                nextNumberBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                nextNumberBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+        
+        // --- EVENT LISTENERS ---
+
+        getNumberBtn.addEventListener('click', () => {
+             if (!isAuthReady) return;
+            updateDoc(queueDocRef, {
+                lastNumber: increment(1)
+            }).catch(error => console.error("Error getting new number:", error));
+        });
+
+        nextNumberBtn.addEventListener('click', () => {
+             if (!isAuthReady) return;
+            if (currentNumber < lastNumber) {
+                updateDoc(queueDocRef, {
+                    currentNumber: increment(1)
+                }).catch(error => console.error("Error calling next number:", error));
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            resetModal.classList.remove('hidden');
+        });
+
+        cancelResetBtn.addEventListener('click', () => {
+            resetModal.classList.add('hidden');
+        });
+
+        confirmResetBtn.addEventListener('click', () => {
+             if (!isAuthReady) return;
+            setDoc(queueDocRef, {
+                currentNumber: 0,
+                lastNumber: 0
+            }).catch(error => console.error("Error resetting queue:", error));
+            resetModal.classList.add('hidden');
+        });
+
+    </script>
+</body>
+</html>
